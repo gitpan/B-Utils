@@ -4,13 +4,16 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
+our @EXPORT_OK;
+use Carp;
+Carp::carp("This is NOT actually B::Utils v0.03.  It is a patched version of B::Utils 0.02.  You should upgrade B::Utils as soon as 0.03 comes out.");
 
 use B qw(main_start main_root walksymtable class OPf_KIDS);
 
 my (%starts, %roots, @anon_subs);
 
-our @bad_stashes = qw(B Carp Exporter warnings Cwd Config CORE blib strict DynaLoader vars XSLoader AutoLoader base);
+our @bad_stashes = qw(B Carp DB Exporter warnings Cwd Config CORE blib strict DynaLoader vars XSLoader AutoLoader base);
 
 { my $_subsdone=0;
 sub _init { # To ensure runtimeness.
@@ -245,7 +248,7 @@ sub walkoptree_filtered {
     if ($$op && ($op->flags & OPf_KIDS)) {
         my $kid;
         for ($kid = $op->first; $$kid; $kid = $kid->sibling) {
-            walkoptree_simple($kid, $filter, $callback, $data);
+            walkoptree_filtered($kid, $filter, $callback, $data);
         }
     }
 }
@@ -307,8 +310,8 @@ sub _preparewarn {
     $args .= " at $file line $line.\n" unless substr($args, length($args) -1) eq "\n";
 }
 
-sub carp  (@) { CORE::die(preparewarn(@_)) }
-sub croak (@) { CORE::warn(preparewarn(@_)) }
+sub croak (@) { CORE::die(_preparewarn(@_)) }
+sub carp  (@) { CORE::warn(_preparewarn(@_)) }
 
 =item opgrep(\%conditions, @ops)
 
@@ -365,8 +368,9 @@ sub opgrep {
         for my $test (qw(name targ type seq flags private pmflags pmpermflags)) {
             next unless exists $conds{$test};
             next OPLOOP unless $o->can($test);
-            next if !ref $conds{$test} and $o->$test ne $conds{test};
-            if ($conds{$test}[0] eq "!") {
+            if (!ref $conds{$test}) {
+                next OPLOOP unless $o->$test eq $conds{$test};
+            } elsif ($conds{$test}[0] eq "!") {
                 my @conds = @{$conds{$test}}; shift @conds;
                 next OPLOOP if grep {$o->$test eq $_} @conds;
             } else {
@@ -382,9 +386,35 @@ sub opgrep {
             next OPLOOP unless opgrep($conds{$neighbour}, $o->$neighbour);
         }
 
-        push @rv, $_;
+        push @rv, $o;
     }
     return @rv;
+}
+
+# 20020205 MJD
+BEGIN {
+  @EXPORT_OK = qw(all_starts all_roots 
+                  anon_subs 
+                  walkoptree_simple
+                  walkoptree_filtered
+                  walkallops_filtered
+                  carp croak
+                  opgrep                  
+                 );
+}
+sub import {
+  my $pack = shift;
+  my @exports = @_;
+  my $caller = caller;
+  my %EOK = map {$_ => 1} @EXPORT_OK;
+  for (@exports) {
+    unless ($EOK{$_}) {
+      require Carp;
+      Carp::croak(qq{"$_" is not exported by the $pack module});
+    }
+    no strict 'refs';
+    *{"$caller\::$_"} = \&{"$pack\::$_"};
+  }
 }
 
 1;
