@@ -1,5 +1,19 @@
 Revision history for Perl extension B::Utils.
 
+0.05_01 Fri Oct 28 23:00:00 CST 2005
+    - Added tests. That's the focus of my work right now.
+    - opgrep() now acceps \@conditions
+      assertions may be code references
+    - Lots of changes to ->parent. This is in progress. It fails when
+      the parent of a node does not exist in the execution pathway of
+      a program. The unused null() ops rooting some conditionals, etc.
+
+      This function fails tests.
+    - Added a function recalc_sub_cache so anon_subs, all_starts, and
+      all_roots' cache of functions can be cleared.
+    - Added functions ->siblings, ->ancestors, ->descendants, and
+      _uniq_ops.
+
 0.05 Thu Nov 25 22:23:00 CST 2004
     - My birthday
     - Fixed infinite loop in ->parent
