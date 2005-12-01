@@ -1,5 +1,9 @@
 Revision history for Perl extension B::Utils.
 
+0.05_02 Thu Dec  1 ..:..:.. ... 2005
+    - ->parent works for all tests now.
+    - Added more tests.
+
 0.05_01 Fri Oct 28 23:00:00 CST 2005
     - Added tests. That's the focus of my work right now.
     - opgrep() now acceps \@conditions

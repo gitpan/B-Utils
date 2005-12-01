@@ -3,7 +3,7 @@ package B::Utils;
 use 5.006;
 use strict;
 use vars qw( $VERSION @EXPORT_OK %EXPORT_TAGS
-    @bad_stashes $TRACE_FH $File $Line $Sub );
+    @bad_stashes $TRACE_FH $file $line $sub );
 
 use subs (
     qw( all_starts all_roots anon_sub recalc_sub_cache ),
@@ -15,34 +15,24 @@ use subs (
 
 use Scalar::Util qw( weaken );
 
-# use Smart::Comments;
-
-=pod
-
 =head1 NAME
 
 B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.05_01 - This is a dev version and
+0.05_02 - This is a dev version and
   is part of an effort to add tests,
   functionality, and merge a fork
   from Module::Info.
 
 =cut
 
-$VERSION = 0.05_01;
+$VERSION = 0.05_02;
 
 =head1 SYNOPSIS
 
   use B::Utils;
-
-=head1 DESCRIPTION
-
-These functions make it easier to manipulate the op tree.
-
-=head1 FUNCTIONS
 
 =cut
 
@@ -60,6 +50,8 @@ use Exporter ();
 @bad_stashes
     = qw(B Carp Exporter warnings Cwd Config CORE blib strict DynaLoader vars XSLoader AutoLoader base);
 
+use List::Util qw( shuffle );
+
 BEGIN {
 
     # Fake up a TRACE constant and set $TRACE_FH
@@ -71,7 +63,263 @@ BEGIN {
 sub TRUE ()  { !!1 }
 sub FALSE () { !!0 }
 
-=pod
+=head1 OP METHODS
+
+=over 4
+
+=cut
+
+# The following functions have been removed because it turns out that
+# this breaks stuff like B::Concise which depends on ops lacking
+# methods they wouldn't normally have.
+#
+# =pod
+#
+# =item C<$op->first>
+#
+# =item C<$oo->last>
+#
+# =item C<$op->other>
+#
+# Normally if you call first, last or other on anything which is not an
+# UNOP, BINOP or LOGOP respectivly it will die.  This leads to lots of
+# code like:
+#
+#     $op->first if $op->can('first');
+#
+# B::Utils provides every op with first, last and other methods which
+# will simply return nothing if it isn't relevent.
+#
+# =cut
+#
+# sub B::OP::first { $_[0]->can("SUPER::first") ? $_[0]->SUPER::first() : () }
+# sub B::OP::last  { $_[0]->can("SUPER::last")  ? $_[0]->SUPER::last()  : () }
+# sub B::OP::other { $_[0]->can("SUPER::other") ? $_[0]->SUPER::other() : () }
+
+=item C<$op->oldname>
+
+Returns the name of the op, even if it is currently optimized to null.
+This helps you understand the stucture of the op tree.
+
+=cut
+
+sub B::OP::oldname {
+    my $op   = shift;
+    my $name = $op->name;
+    my $targ = $op->targ;
+
+    # This is a an operation which *used* to be a real op but was
+    # optimized away. Fetch the old value and ignore the leading pp_.
+
+    # I forget why the original pp # is located in the targ field.
+    return $name eq 'null' && $targ
+        ? substr( ppname($targ), 3 )
+        : $name;
+
+}
+
+=item C<$op->kids>
+
+Returns an array of all this op's non-null children, in order.
+
+=cut
+
+sub B::OP::kids {
+    my $op = shift;
+    return unless defined wantarray;
+
+    my @kids;
+    if ( class($op) eq "LISTOP" ) {
+        @kids = $op->first;
+        push @kids, $kids[-1]->sibling while $kids[-1]->can('sibling');
+        pop @kids
+            if 'NULL' eq class( $kids[-1] );
+
+        ### Assert: $op->children == @kids
+    }
+    else {
+        @kids = (
+            ( $op->can('first') ? $op->first : () ),
+            ( $op->can('last')  ? $op->last  : () ),
+            ( $op->can('other') ? $op->other : () )
+        );
+    }
+    return @kids;
+}
+
+=item C<$op->parent>
+
+Returns the parent node in the op tree, if possible. Currently
+"possible" means "if the tree has already been optimized"; that is, if
+we're during a C<CHECK> block. (and hence, if we have valid C<next>
+pointers.)
+
+In the future, it may be possible to search for the parent before we
+have the C<next> pointers in place, but it'll take me a while to
+figure out how to do that.
+
+=cut
+
+sub B::OP::parent {
+    my $op     = shift;
+    my $parent = $op->_parent_impl( $op, "" );
+
+    $parent;
+}
+
+sub B::NULL::_parent_impl { }
+
+sub B::OP::_parent_impl {
+    my ( $op, $target, $cx ) = @_;
+
+    return if $cx =~ /\b$$op\b/;
+
+    for ( $op->kids ) {
+        if ( $$_ == $$target ) {
+            return $op;
+        }
+    }
+
+    return (
+        $op->sibling->_parent_impl( $target, "$cx$$op S " )
+            || (
+              $cx =~ /^(?:\d+ S )*(?:\d+ N )*$/
+            ? $op->next->_parent_impl( $target, "$cx$$op N " )
+            : ()
+            )
+            || (
+              $op->can('first')
+            ? $op->first->_parent_impl( $target, "$cx$$op F " )
+            : ()
+            )
+    );
+}
+
+=item C<$op->ancestors>
+
+Returns all parents of this node, recursively. The list is ordered
+from younger/closer parents to older/farther parents.
+
+=cut
+
+sub B::OP::ancestors {
+    my @nodes = shift;
+
+    my $parent;
+    push @nodes, $parent while $parent = $nodes[-1]->parent;
+    shift @nodes;
+
+    return @nodes;
+}
+
+=item C<$op->descendants>
+
+Returns all children of this node, recursively. The list is unordered.
+
+=cut
+
+sub B::OP::descendants {
+    my $node = shift;
+    my @nodes;
+    walkoptree_simple( $node,
+        sub { push @nodes, $_ if ${ $_[0] } != $$node } );
+    return shuffle @nodes;
+}
+
+=item C<$op->siblings>
+
+Returns all younger siblings of this node. The list is ordered from
+younger/closer siblings to older/farther siblings.
+
+=cut
+
+sub B::OP::siblings {
+    my @siblings = shift;
+
+    my $sibling;
+    push @siblings, $sibling while $sibling = $siblings[-1]->can('sibling');
+    shift @siblings;
+    pop @siblings if 'NULL' eq class $siblings[-1];
+
+    return @siblings;
+}
+
+=item C<$op->previous>
+
+Like C< $op->next >, but not quite.
+
+=cut
+
+## sub B::OP::previous {
+##     return unless defined wantarray;
+##
+##     my $target = shift;
+##
+##     my $start = $target;
+##     my (%deadend, $search);
+##     $search = sub {
+##         my $node = $_[0];
+##
+##         unless ( defined $node ) {
+##             # If I've been asked to search nothing, just return. The
+##             # ->parent call might do this to me.
+##             return FALSE;
+##         }
+##         elsif ( exists $deadend{$node} ) {
+##             # If this node has been seen already, try again as its
+##             # parent.
+##             return $search->( $node->parent );
+##         }
+##         elsif ( eval { ${$node->next} == $$target } ) {
+##             return $node;
+##         }
+##
+##         # When searching the children, do it in reverse order because
+##         # pointers back up are more likely to be farther down the
+##         # stack. This works without reversing but I can avoid some
+##         # work by ordering the work this way.
+##         my @kids = reverse $node->kids;
+##
+##         # Search this node's direct children for the ->next pointer
+##         # that points to this node.
+##         eval { ${$_->can('next')} == $$target } and return $_->next
+##           for @kids;
+##
+##         # For each child, check it for a match.
+## 	my $found;
+##         $found = $search->($_) and return $found
+##           for @kids;
+##
+##         # Not in this subtree.
+##         $deadend{$node} = TRUE;
+##         return FALSE;
+##     };
+##
+##     my $next = $target;
+##     while ( eval { $next = $next->next } ) {
+## 	my $result;
+##         $result = $search->( $next )
+##           and return $result;
+##     }
+##
+##     return FALSE;
+## }
+
+=item C<$op->stringify>
+
+Returns a nice stringification of an opcode.
+
+=cut
+
+sub B::OP::stringify {
+    my $op = shift;
+
+    return sprintf "%s-%s=(0x%07x)", $op->name, class($op), $$op;
+}
+
+=back
+
+=head1 EXPORTABLE FUNCTIONS
 
 =over 4
 
@@ -83,18 +331,19 @@ Returns a hash of all of the starting ops or root ops of optrees, keyed
 to subroutine name; the optree for main program is simply keyed to C<__MAIN__>.
 
 B<Note>: Certain "dangerous" stashes are not scanned for subroutines:
-the list of such stashes can be found in C<@B::Utils::bad_stashes>. Feel
-free to examine and/or modify this to suit your needs. The intention is
-that a simple program which uses no modules other than C<B> and
-C<B::Utils> would show no addition symbols.
+the list of such stashes can be found in
+C<@B::Utils::bad_stashes>. Feel free to examine and/or modify this to
+suit your needs. The intention is that a simple program which uses no
+modules other than C<B> and C<B::Utils> would show no addition
+symbols.
 
 This does B<not> return the details of ops in anonymous subroutines
 compiled at compile time. For instance, given
 
     $a = sub { ... };
 
-the subroutine will not appear in the hash. This is just as well, since
-they're anonymous... If you want to get at them, use...
+the subroutine will not appear in the hash. This is just as well,
+since they're anonymous... If you want to get at them, use...
 
 =cut
 
@@ -102,9 +351,7 @@ my ( %starts, %roots );
 sub all_starts { _init_sub_cache(); wantarray ? %starts : \%starts }
 sub all_roots  { _init_sub_cache(); wantarray ? %roots  : \%roots }
 
-=pod
-
-=item C<anon_subs()>
+=item C<anon_subs>
 
 This returns an array of hash references. Each element has the keys
 "start" and "root". These are the starting and root ops of all of the
@@ -115,9 +362,7 @@ anonymous subroutines in the program.
 my @anon_subs;
 sub anon_subs { _init_sub_cache(); wantarray ? @anon_subs : \@anon_subs }
 
-=pod
-
-=item C< recalc_sub_cache() >
+=item C<recalc_sub_cache>
 
 If PL_sub_generation has changed or you have some other reason to want
 to force the re-examination of the optrees, everywhere, call this
@@ -180,7 +425,7 @@ sub B::GV::_B_Utils_init_sub_cache {
     # This is a callback function called from B::Utils::_init via
     # B::walksymtable.
 
-    my $gv = $_[0];
+    my $gv = shift;
     my $cv = $gv->CV;
 
     # If the B::CV object is a pointer to nothing, ignore it.
@@ -230,350 +475,26 @@ sub B::GV::_B_Utils_init_sub_cache {
 #     return TRUE;
 # }
 
-=pod
-
-=item C<$op->first>
-
-=item C<$oo->last>
-
-=item C<$op->other>
-
-Normally if you call first, last or other on anything which is not an
-UNOP, BINOP or LOGOP respectivly it will die.  This leads to lots of
-code like:
-
-    $op->first if $op->can('first');
-
-B::Utils provides every op with first, last and other methods which
-will simply return nothing if it isn't relevent.
-
-=cut
-
-# BEGIN {
-#     for ( qw( first last other ) ) {
-# 	eval "#line ".__LINE__." '".__FILE__.qq['\n
-# sub B::OP::$_ {
-#     my \$op = \$_[0];
-#     my \$cv;
-#     return( ( \$cv = \$op->can( "SUPER::first" ) )
-#  	    ? \$op->\$cv
-#  	    : () );
-# }
-#    ];
-#         die $@ if $@;
-#     }
-# }
-
-=pod
-
-=item C<$op->oldname>
-
-Returns the name of the op, even if it is currently optimized to null.
-This helps you understand the stucture of the op tree.
-
-=cut
-
-sub B::OP::oldname {
-    my $op   = $_[0];
-    my $name = $op->name;
-    my $targ = $op->targ;
-
-    # This is a an operation which *used* to be a real op but was
-    # optimized away. Fetch the old value and ignore the leading pp_.
-
-    # I forget why the original pp # is located in the targ field.
-    return $name eq 'null' && $targ
-        ? substr( ppname($targ), 3 )
-        : $name;
-
-}
-
-=pod
-
-=item C<$op->kids>
-
-Returns an array of all this op's non-null children, in order.
-
-=cut
-
-sub B::OP::kids {
-    my $op = $_[0];
-    return unless defined wantarray;
-
-    if ( class($op) eq "LISTOP" ) {
-        my @kids = $op->first;
-        push @kids, $kids[-1]->sibling while $kids[-1]->can('sibling');
-        pop @kids if 'NULL' eq class( $kids[-1] );
-
-        @kids == $op->children or die;
-
-        return @kids;
-    }
-    else {
-        my @kids;
-
-        push @kids, $op->first if $op->can('first');
-        push @kids, $op->last  if $op->can('last');
-        push @kids, $op->other if $op->can('other');
-        return @kids;
-    }
-}
-
-=pod
-
-=item C<$op->parent>
-
-Returns the parent node in the op tree, if possible. Currently
-"possible" means "if the tree has already been optimized"; that is, if
-we're during a C<CHECK> block. (and hence, if we have valid C<next>
-pointers.)
-
-In the future, it may be possible to search for the parent before we
-have the C<next> pointers in place, but it'll take me a while to
-figure out how to do that.
-
-=cut
-
-sub B::OP::parent {
-
-    my $target  = shift;
-    my $deadend = shift || { $$target => 1 };
-
-    ### Parent of: $target->stringify
-
-    if ( 'NULL' eq class( $target->next ) ) {
-        ### Null next
-        return;
-    }
-
-    # Simon Cozens' wrote this: "I'm not sure how to do this yet. I'm
-    # sure there is a way. If you know, please email me."
-
-    my ( $search_nodes, @todo, @done );
-    $search_nodes = sub {
-        my $node = $_[0]
-            or return FALSE;
-        'NULL' ne class($node)
-            or return FALSE;
-
-        # Go up a level if we've got stuck, and search (for the same
-        # $target) from a higher vantage point.
-        if ( exists $deadend->{$$node} ) {
-            ### DEADEND: $node->stringify
-            return;
-        }
-        else {
-            ### Trying: $node->stringify
-            push @done, $node;
-        }
-
- #        if ( exists $deadend->{$$node} ) {
- #            if ( my $parent = $search_nodes->( $node->parent($deadend) ) ) {
- #                return $parent;
- #            }
- #        }
-
-        unshift @todo, $node->kids;
-
-        # Test the immediate children, but only children we haven't visited
-        # already.
-        my @new_kids = grep !$deadend->{$$_}, $node->kids;
-        for (@new_kids) {
-            if ( $$_ == $$target ) {
-                return $node;
-            }
-        }
-
-        # Recurse and examine each child, in turn.
-        @todo = _uniq_ops( @new_kids, @todo );
-
-        # Not in this subtree.
-        ++$deadend->{$$node};
-        return;
-    };
-
-    # Skip to the farthest sibling and make a list of each with the most
-    # recent at the beginning of the list.
-
-    # I am planning ahead for the day when it turns out that the parent
-    # cannot be found in the last sibling somewhere. Maybe it is just a
-    # null? I would like to be able to back track up the tree to find a
-    # ->next node that will bring us to northeast of (or even better,
-    # directly to) the parent.
-
-    @todo = reverse( $target->siblings ), $_;
-    while (1) {
-
-        @todo = _uniq_ops(
-            grep { 'NULL' ne class($_) and !$deadend->{$$_} }
-                map {
-                (   ( $_->can('last')  ? $_->last  : () ),
-                    ( $_->can('other') ? $_->other : () ),
-                    ( $_->can('next')  ? $_->next  : () ),
-                    $_->kids,
-                    $_->siblings,
-                    $_
-                    )
-                } ( @todo, @done, $_ )
-        );
-
-        last if not @todo;
-
-        while (@todo) {
-            my $to_search = shift @todo;
-            if ( my $parent = $search_nodes->($to_search) ) {
-                weaken $search_nodes;
-                return $parent;
-            }
-        }
-    }
-
-    # Having reached here... I give up?
-    weaken $search_nodes;
-    return;
-}
-
-sub _uniq_ops { my %seen; grep !$seen{$$_}++, @_ }
-
-=pod
-
-=item ->ancestors()
-
-Undocumented.
-
-=cut
-
-sub ancestors {
-    my @nodes;
-    my $node = shift;
-    while ( my $parent = $node->parent ) {
-        push @nodes, $parent;
-    }
-    return @nodes;
-}
-
-=pod
-
-=item ->descendants()
-
-Undocumented.
-
-=cut
-
-sub descendants {
-    my @nodes;
-    my $node = shift;
-    walkoptree_simple( $node, sub { push @nodes, $_ } );
-    return @nodes;
-}
-
-=pod
-
-=item ->siblings()
-
-Undocumented.
-
-=cut
-
-sub B::OP::siblings {
-    my @siblings = $_[0];
-    push @siblings, $siblings[-1]->sibling
-        until 'NULL' eq class $siblings[-1];
-    shift @siblings;
-    pop @siblings if 'NULL' eq class $siblings[-1];
-
-    return @siblings;
-}
-
-=item C< $op->previous >
-
-Like C< $op->next >, but not quite.
-
-=cut
-
-## sub B::OP::previous {
-##     return unless defined wantarray;
-##
-##     my $target = $_[0];
-##
-##     my $start = $target;
-##     my (%deadend, $search);
-##     $search = sub {
-##         my $node = $_[0];
-##
-##         unless ( defined $node ) {
-##             # If I've been asked to search nothing, just return. The
-##             # ->parent call might do this to me.
-##             return FALSE;
-##         }
-##         elsif ( exists $deadend{$node} ) {
-##             # If this node has been seen already, try again as its
-##             # parent.
-##             return $search->( $node->parent );
-##         }
-##         elsif ( eval { ${$node->next} == $$target } ) {
-##             return $node;
-##         }
-##
-##         # When searching the children, do it in reverse order because
-##         # pointers back up are more likely to be farther down the
-##         # stack. This works without reversing but I can avoid some
-##         # work by ordering the work this way.
-##         my @kids = reverse $node->kids;
-##
-##         # Search this node's direct children for the ->next pointer
-##         # that points to this node.
-##         eval { ${$_->can('next')} == $$target } and return $_->next
-##           for @kids;
-##
-##         # For each child, check it for a match.
-## 	my $found;
-##         $found = $search->($_) and return $found
-##           for @kids;
-##
-##         # Not in this subtree.
-##         $deadend{$node} = TRUE;
-##         return FALSE;
-##     };
-##
-##     my $next = $target;
-##     while ( eval { $next = $next->next } ) {
-## 	my $result;
-##         $result = $search->( $next )
-##           and return $result;
-##     }
-##
-##     return FALSE;
-## }
-
-sub B::OP::stringify {
-    my $op = shift;
-
-    return sprintf "%s %s=(0x%07x)", $op->name, class($op), $$op;
-}
-
-=pod
-
-=item walkoptree_simple($op, \&callback, [$data]
+=item C<walkoptree_simple($op, \&callback, [$data])>
 
 The C<B> module provides various functions to walk the op tree, but
 they're all rather difficult to use, requiring you to inject methods
 into the C<B::OP> class. This is a very simple op tree walker with
 more expected semantics.
 
-All the C<walk> functions set C<B::Utils::file> and C<B::Utils::line>
-to the appropriate values of file and line number in the program being
-examined.
+All the C<walk> functions set C<$B::Utils::file>, C<$B::Utils::line>,
+and C<$B::Utils::sub> to the appropriate values of file, line number,
+and sub name in the program being examined.
 
 =cut
 
-$File = '__none__';
-$Line = 0;
-$Sub  = undef;
+$file = '__none__';
+$line = 0;
+$sub  = undef;
 
 sub walkoptree_simple {
-    $File = '__none__';
-    $Line = 0;
+    $file = '__none__';
+    $line = 0;
 
     &_walkoptree_simple;
 
@@ -584,8 +505,8 @@ sub _walkoptree_simple {
     my ( $op, $callback, $data ) = @_;
 
     if ( ref $op and $op->isa("B::COP") ) {
-        $File = $op->file;
-        $Line = $op->line;
+        $file = $op->file;
+        $line = $op->line;
     }
 
     $callback->( $op, $data );
@@ -600,9 +521,7 @@ sub _walkoptree_simple {
 
 }
 
-=pod
-
-=item walkoptree_filtered($op, \&filter, \&callback, [$data])
+=item C<walkoptree_filtered($op, \&filter, \&callback, [$data])>
 
 This is much the same as C<walkoptree_simple>, but will only call the
 callback if the C<filter> returns true. The C<filter> is passed the
@@ -612,8 +531,8 @@ for building your own filters.
 =cut
 
 sub walkoptree_filtered {
-    $File = '__none__';
-    $Line = 0;
+    $file = '__none__';
+    $line = 0;
 
     &_walkoptree_filtered;
 
@@ -624,8 +543,8 @@ sub _walkoptree_filtered {
     my ( $op, $filter, $callback, $data ) = @_;
 
     if ( $op->isa("B::COP") ) {
-        $File = $op->file;
-        $Line = $op->line;
+        $file = $op->file;
+        $line = $op->line;
     }
 
     $callback->( $op, $data ) if $filter->($op);
@@ -648,9 +567,7 @@ sub _walkoptree_filtered {
     return TRUE;
 }
 
-=pod
-
-=item walkallops_simple(\&callback, [$data])
+=item C<walkallops_simple(\&callback, [$data])>
 
 This combines C<walkoptree_simple> with C<all_roots> and C<anon_subs>
 to examine every op in the program. C<$B::Utils::sub> is set to the
@@ -660,7 +577,7 @@ the main program and C<__ANON__> if you're in an anonymous subroutine.
 =cut
 
 sub walkallops_simple {
-    $Sub = undef;
+    $sub = undef;
 
     &_walkallops_simple;
 
@@ -674,22 +591,20 @@ sub _walkallops_simple {
 
     walkoptree_simple( $_, $callback, $data ) for values %roots;
 
-    $Sub = "__ANON__";
+    $sub = "__ANON__";
     walkoptree_simple( $_->{root}, $callback, $data ) for @anon_subs;
 
     return TRUE;
 }
 
-=pod
-
-=item walkallops_filtered(\&filter, \&callback, [$data])
+=item C<walkallops_filtered(\&filter, \&callback, [$data])>
 
 Same as above, but filtered.
 
 =cut
 
 sub walkallops_filtered {
-    $Sub = undef;
+    $sub = undef;
 
     &_walkallops_filterd;
 
@@ -703,7 +618,7 @@ sub _walkallops_filtered {
 
     walkoptree_filtered( $_, $filter, $callback, $data ) for values %roots;
 
-    $Sub = "__ANON__";
+    $sub = "__ANON__";
 
     walkoptree_filtered( $_->{root}, $filter, $callback, $data )
         for @anon_subs;
@@ -711,9 +626,7 @@ sub _walkallops_filtered {
     return TRUE;
 }
 
-=pod
-
-=item opgrep(\%conditions, @ops)
+=item C<opgrep(\%conditions, @ops)>
 
 Returns the ops which meet the given conditions. The conditions should
 be specified like this:
@@ -753,7 +666,7 @@ Here are the things that can be tested:
         name targ type seq flags private pmflags pmpermflags
         first other last sibling next pmreplroot pmreplstart pmnext
 
-=item opgrep( \@conditions, @ops )
+=item C<opgrep( \@conditions, @ops )>
 
 Same as sbove, except that you don't have to chain the conditions
 yourself.  If you pass an array-ref, opgrep will chain the conditions
@@ -868,11 +781,9 @@ sub _opgrep_helper {
     return $conds[0];
 }
 
-=pod
+=item C<carp(@args)>
 
-=item carp(@args)
-
-=item croak(@args)
+=item C<croak(@args)>
 
 Warn and die, respectively, from the perspective of the position of
 the op in the program. Sounds complicated, but it's exactly the kind
@@ -888,7 +799,7 @@ sub _preparewarn {
     my $args = join '', @_;
     $args = "Something's wrong " unless $args;
     if ( "\n" ne substr $args, -1, 1 ) {
-        $args .= " at $File line $Line.\n";
+        $args .= " at $file line $line.\n";
     }
     return $args;
 }
@@ -906,16 +817,12 @@ Maintained by Joshua ben Jore, C<jjore@cpan.org>
 
 Contributions from Mattia Barbon and Jim Cromie.
 
-=head1 TODO
-
-I need to add more Fun Things, and possibly clean up some parts where
-the (previous/parent) algorithm has catastrophic cases, but it's more
-important to get this out right now than get it right.
-
 =head1 SEE ALSO
 
 L<B>, L<B::Generate>.
 
 =cut
 
-1;
+"Wow, you're pretty uptight for a guy who worships a multi-armed,
+hermaphrodite embodiment of destruction who has a fetish for vaguely
+phallic shaped headgear.";
