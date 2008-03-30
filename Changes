@@ -1,5 +1,17 @@
 Revision history for Perl extension B::Utils.
 
+0.05_03 Sun Mar 30 11:13:.. CEST 2008
+    - Fix various bugs in opgrep(). Did that work in 0.05_02 at all?
+    - opgrep() can now accept array references as the values
+      of recursing properties (such as first, last, next, or
+      sibling). The arrays are to hold sub structures / hash
+      references and only one of the needs to match.
+    - Add a longer example to opgrep() documentation.
+    - Fix POD markup.
+    - Add a clear license statement to the docs.
+    - Use a string as version -- otherwise it might not be flagged
+      as a development release!
+
 0.05_02 Thu Dec  1 ..:..:.. ... 2005
     - ->parent works for all tests now.
     - Added more tests.

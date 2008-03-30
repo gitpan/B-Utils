@@ -9,7 +9,7 @@ use subs (
     qw( all_starts all_roots anon_sub recalc_sub_cache ),
     qw( walkoptree_simple walkoptree_filtered ),
     qw( walkallops_simple walkallops_filtered ),
-    qw( opgrep ),
+    qw( opgrep op_or ),
     qw( croak carp )
 );
 
@@ -21,14 +21,14 @@ B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.05_02 - This is a dev version and
+0.05_03 - This is a dev version and
   is part of an effort to add tests,
   functionality, and merge a fork
   from Module::Info.
 
 =cut
 
-$VERSION = 0.05_02;
+$VERSION = '0.05_03';
 
 =head1 SYNOPSIS
 
@@ -43,7 +43,7 @@ use Exporter ();
     walkoptree_simple walkoptree_filtered
     walkallops_simple walkallops_filtered
     recalc_sub_cache
-    opgrep );
+    opgrep op_or );
 %EXPORT_TAGS = ( all => \@EXPORT_OK );
 *import      = \&Exporter::import;
 
@@ -75,11 +75,11 @@ sub FALSE () { !!0 }
 #
 # =pod
 #
-# =item C<$op->first>
+# =item C<$op-E<gt>first>
 #
-# =item C<$oo->last>
+# =item C<$oo-E<gt>last>
 #
-# =item C<$op->other>
+# =item C<$op-E<gt>other>
 #
 # Normally if you call first, last or other on anything which is not an
 # UNOP, BINOP or LOGOP respectivly it will die.  This leads to lots of
@@ -96,7 +96,7 @@ sub FALSE () { !!0 }
 # sub B::OP::last  { $_[0]->can("SUPER::last")  ? $_[0]->SUPER::last()  : () }
 # sub B::OP::other { $_[0]->can("SUPER::other") ? $_[0]->SUPER::other() : () }
 
-=item C<$op->oldname>
+=item C<$op-E<gt>oldname>
 
 Returns the name of the op, even if it is currently optimized to null.
 This helps you understand the stucture of the op tree.
@@ -118,7 +118,7 @@ sub B::OP::oldname {
 
 }
 
-=item C<$op->kids>
+=item C<$op-E<gt>kids>
 
 Returns an array of all this op's non-null children, in order.
 
@@ -147,7 +147,7 @@ sub B::OP::kids {
     return @kids;
 }
 
-=item C<$op->parent>
+=item C<$op-E<gt>parent>
 
 Returns the parent node in the op tree, if possible. Currently
 "possible" means "if the tree has already been optimized"; that is, if
@@ -195,7 +195,7 @@ sub B::OP::_parent_impl {
     );
 }
 
-=item C<$op->ancestors>
+=item C<$op-E<gt>ancestors>
 
 Returns all parents of this node, recursively. The list is ordered
 from younger/closer parents to older/farther parents.
@@ -212,7 +212,7 @@ sub B::OP::ancestors {
     return @nodes;
 }
 
-=item C<$op->descendants>
+=item C<$op-E<gt>descendants>
 
 Returns all children of this node, recursively. The list is unordered.
 
@@ -226,7 +226,7 @@ sub B::OP::descendants {
     return shuffle @nodes;
 }
 
-=item C<$op->siblings>
+=item C<$op-E<gt>siblings>
 
 Returns all younger siblings of this node. The list is ordered from
 younger/closer siblings to older/farther siblings.
@@ -244,9 +244,9 @@ sub B::OP::siblings {
     return @siblings;
 }
 
-=item C<$op->previous>
+=item C<$op-E<gt>previous>
 
-Like C< $op->next >, but not quite.
+Like C< $op-E<gt>next >, but not quite.
 
 =cut
 
@@ -305,7 +305,7 @@ Like C< $op->next >, but not quite.
 ##     return FALSE;
 ## }
 
-=item C<$op->stringify>
+=item C<$op-E<gt>stringify>
 
 Returns a nice stringification of an opcode.
 
@@ -678,88 +678,111 @@ hash-refs, with the same testable conditions as given above.
 sub opgrep {
     return unless defined wantarray;
 
-    my $conds_ref = $_[0];
+    my $conds_ref = shift;
     $conds_ref = _opgrep_helper($conds_ref)
         if 'ARRAY' eq ref $conds_ref;
 
     my @grep_ops;
 
+    # Check whether we're dealing with a disjunction of patterns:
+    my @conditions = exists($conds_ref->{disjunction}) ? @{$conds_ref->{disjunction}} : ($conds_ref);
+
 OP:
     for my $op (@_) {
         next unless ref $op and $$op;
 
-        # First, let's skim off ops of the wrong type. If they require
-        # something that isn't implemented for this kind of object, it
-        # must be wrong. These tests are cheap
-        exists $conds_ref->{$_}
-            and !$op->can($_)
-            and next
-            for
-            qw( first other last pmreplroot pmreplstart pmnext pmflags pmpermflags name targ type seq flags private  );
+        # only one condition by default, but if we have a disjunction, there will
+        # be several
+CONDITION:
+        foreach my $condition (@conditions) {
+            # First, let's skim off ops of the wrong type. If they require
+            # something that isn't implemented for this kind of object, it
+            # must be wrong. These tests are cheap
+            exists $condition->{$_}
+                and !$op->can($_)
+                and next
+                for
+                qw( first other last pmreplroot pmreplstart pmnext pmflags pmpermflags name targ type seq flags private  );
 
-        (   ref( $conds_ref->{$_} )
-            ? ( "!" eq $conds_ref->{$_}[0]
-                ? ()
-                : ()
+            # Check alternations
+            (   ref( $condition->{$_} )
+                ? ( "!" eq $condition->{$_}[0]
+                    ? ()
+                    : ()
+                    )
+                : ( $op->can($_) && $op->$_ eq $condition->{$_} or next )
                 )
-            : ( $op->$_ eq $conds_ref->{$_} or next )
-            )
-            for qw( name targ type seq flags private pmflags pmpermflags );
+                for qw( name targ type seq flags private pmflags pmpermflags );
 
-        for my $test (
-            qw(name targ type seq flags private pmflags pmpermflags))
-        {
-            next unless exists $conds_ref->{$_};
-            my $val = $op->$test;
+#            foreach (qw( name targ type seq flags private pmflags pmpermflags )) {
+#              if ( ref $condition->{$_} ) { # alternation or inversion or both
+#                if ( "!" eq $condition->{$_}[0] ) { # inversion
+#                }
+#                else { # alternation only
+#                }
+#              }
+#              else {
+#                  ( $op->$_ eq $condition->{$_} or next )
+#              }
+#            }
 
-            if ( 'ARRAY' eq ref $conds_ref->{$test} ) {
+            for my $test (
+                qw(name targ type seq flags private pmflags pmpermflags))
+            {
+                next unless exists $condition->{$test};
+                my $val = $op->$test;
 
-                # Test a list of valid/invalid values.
-                if ( '!' eq $conds_ref->{$test}[0] ) {
+                if ( 'ARRAY' eq ref $condition->{$test} ) {
 
-                    # Fail if any entries match.
-                    $_ eq $val
-                        or next OP
-                        for @{ $conds_ref->{$test} }
-                        [ 1 .. $#{ $conds_ref->{$test} } ];
+                    # Test a list of valid/invalid values.
+                    if ( '!' eq $condition->{$test}[0] ) {
+
+                        # Fail if any entries match.
+                        $_ eq $val
+                            or next CONDITION 
+                            for @{ $condition->{$test} }
+                            [ 1 .. $#{ $condition->{$test} } ];
+                    }
+                    else {
+
+                        # Fail if any entries don't match.
+                        $_ ne $val
+                            or next CONDITION 
+                            for @{ $condition->{$test} };
+                    }
+                }
+                elsif ( 'CODE' eq ref $condition->{$test} ) {
+                    local $_ = $val;
+                    $condition->{$test}($op)
+                        or next CONDITION;
                 }
                 else {
 
-                    # Fail if any entries don't match.
-                    $_ ne $val
-                        or next OP
-                        for @{ $conds_ref->{$test} };
+                    # Test a single value.
+                    $condition->{$test} eq $op->$test
+                        or next CONDITION;
                 }
-            }
-            elsif ( 'CODE' eq ref $conds_ref->{$test} ) {
-                local $_ = $val;
-                $conds_ref->{$test}($op)
-                    or next OP;
-            }
-            else {
+            } # end for test
 
-                # Test a single value.
-                $conds_ref->{$test} eq $op->$test
-                    or next OP;
+            # We know it ->can because that was tested above. It is an
+            # error to have anything in this list of tests that isn't
+            # tested for ->can above.
+            exists $condition->{$_}
+                and not( opgrep( $condition->{$_}, $op->$_ ) )
+                and next CONDITION
+                for
+                qw( first other last sibling next pmreplroot pmreplstart pmnext );
+
+            # Attempt to quit early if possible.
+            if (wantarray) {
+                push @grep_ops, $_;
+                last;
             }
-        }
-
-        # We know it ->can because that was tested above. It is an
-        # error to have anything in this list of tests that isn't
-        # tested for ->can above.
-        exists $conds_ref->{$_}
-            and not( opgrep( $conds_ref->{$_}, $op->$_ ) )
-            and next
-            for
-            qw( first other last sibling next pmreplroot pmreplstart pmnext );
-
-        # Attempt to quit early if possible.
-        if (wantarray) {
-            push @grep_ops, $_;
-        }
-        elsif ( defined wantarray ) {
-            return TRUE;
-        }
+            elsif ( defined wantarray ) {
+                return TRUE;
+            }
+        } # end for @conditions
+        # end of conditions loop should be end of op test
     }
 
     # Either this was called in list context and then I want to just
@@ -779,6 +802,61 @@ sub _opgrep_helper {
 
     # This is a linked list now so I can return only the head.
     return $conds[0];
+}
+
+=item C<op_or( @conditions )>
+
+Unlike the chaining of conditions done by C<opgrep> itself if there are multiple
+conditions, this function creates a disjunction (C<$cond1 || $cond2 || ...>) of
+the conditions and returns a structure (hash reference) that can be passed to
+opgrep as a single condition.
+
+Example:
+
+  my $sub_structure = {
+    name => 'helem',
+    first => { name => 'rv2hv', },
+    'last' => { name => 'const', },
+  };
+  
+  my @ops = opgrep( {
+      name => 'leavesub',
+      first => {
+        name => 'lineseq',
+        first => { name => 'nextstate', },
+        last => op_or(
+          {
+            name => 'return',
+            first => { name => 'pushmark' },
+            last => $sub_structure,
+          },
+          $sub_structure,
+        ),
+      },
+  }, $op_obj );
+
+This example matches the code in a typical simplest-possible
+accessor method (albeit not down to the last bit):
+
+  sub get_foo { $_[0]->{foo} }
+
+But by adding an alternation
+we can also match optional op layers. In this case, we optionally
+match a return statement, so the following implementation is also
+recognized:
+
+  sub get_foo { return $_[0]->{foo} }
+
+Essentially, this is syntactic sugar for the following structure
+recognized by C<opgrep()>:
+
+  { disjunction => [@conditions] }
+
+=cut
+
+sub op_or {
+  my @conditions = @_;
+  return({ disjunction => [@conditions] });
 }
 
 =item C<carp(@args)>
@@ -815,7 +893,12 @@ None by default.
 Originally written by Simon Cozens, C<simon@cpan.org>
 Maintained by Joshua ben Jore, C<jjore@cpan.org>
 
-Contributions from Mattia Barbon and Jim Cromie.
+Contributions from Mattia Barbon, Jim Cromie, and Steffen Mueller.
+
+=head1 LICENSE
+
+This module is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
 
 =head1 SEE ALSO
 

@@ -2,16 +2,49 @@ NAME
     B::Utils - Helper functions for op tree manipulation
 
 VERSION
-    0.05_01 - This is a dev version and is part of an effort to add tests,
+    0.05_03 - This is a dev version and is part of an effort to add tests,
     functionality, and merge a fork from Module::Info.
 
 SYNOPSIS
       use B::Utils;
 
-DESCRIPTION
-    These functions make it easier to manipulate the op tree.
+OP METHODS
+    "$op-"oldname>
+        Returns the name of the op, even if it is currently optimized to
+        null. This helps you understand the stucture of the op tree.
 
-FUNCTIONS
+    "$op-"kids>
+        Returns an array of all this op's non-null children, in order.
+
+    "$op-"parent>
+        Returns the parent node in the op tree, if possible. Currently
+        "possible" means "if the tree has already been optimized"; that is,
+        if we're during a "CHECK" block. (and hence, if we have valid "next"
+        pointers.)
+
+        In the future, it may be possible to search for the parent before we
+        have the "next" pointers in place, but it'll take me a while to
+        figure out how to do that.
+
+    "$op-"ancestors>
+        Returns all parents of this node, recursively. The list is ordered
+        from younger/closer parents to older/farther parents.
+
+    "$op-"descendants>
+        Returns all children of this node, recursively. The list is
+        unordered.
+
+    "$op-"siblings>
+        Returns all younger siblings of this node. The list is ordered from
+        younger/closer siblings to older/farther siblings.
+
+    "$op-"previous>
+        Like " $op-"next >, but not quite.
+
+    "$op-"stringify>
+        Returns a nice stringification of an opcode.
+
+EXPORTABLE FUNCTIONS
     "all_starts"
     "all_roots"
         Returns a hash of all of the starting ops or root ops of optrees,
@@ -32,84 +65,43 @@ FUNCTIONS
         the subroutine will not appear in the hash. This is just as well,
         since they're anonymous... If you want to get at them, use...
 
-    "anon_subs()"
+    "anon_subs"
         This returns an array of hash references. Each element has the keys
         "start" and "root". These are the starting and root ops of all of
         the anonymous subroutines in the program.
 
-    " recalc_sub_cache() "
+    "recalc_sub_cache"
         If PL_sub_generation has changed or you have some other reason to
         want to force the re-examination of the optrees, everywhere, call
         this function.
 
-    "$op-"first>
-    "$oo-"last>
-    "$op-"other>
-        Normally if you call first, last or other on anything which is not
-        an UNOP, BINOP or LOGOP respectivly it will die. This leads to lots
-        of code like:
-
-            $op->first if $op->can('first');
-
-        B::Utils provides every op with first, last and other methods which
-        will simply return nothing if it isn't relevent.
-
-    "$op-"oldname>
-        Returns the name of the op, even if it is currently optimized to
-        null. This helps you understand the stucture of the op tree.
-
-    "$op-"kids>
-        Returns an array of all this op's non-null children, in order.
-
-    "$op-"parent>
-        Returns the parent node in the op tree, if possible. Currently
-        "possible" means "if the tree has already been optimized"; that is,
-        if we're during a "CHECK" block. (and hence, if we have valid "next"
-        pointers.)
-
-        In the future, it may be possible to search for the parent before we
-        have the "next" pointers in place, but it'll take me a while to
-        figure out how to do that.
-
-    ->ancestors()
-        Undocumented.
-
-    ->descendants()
-        Undocumented.
-
-    ->siblings()
-        Undocumented.
-
-    " $op-"previous >
-        Like " $op-"next >, but not quite.
-
-    walkoptree_simple($op, \&callback, [$data]
+    "walkoptree_simple($op, \&callback, [$data])"
         The "B" module provides various functions to walk the op tree, but
         they're all rather difficult to use, requiring you to inject methods
         into the "B::OP" class. This is a very simple op tree walker with
         more expected semantics.
 
-        All the "walk" functions set "B::Utils::file" and "B::Utils::line"
-        to the appropriate values of file and line number in the program
-        being examined.
+        All the "walk" functions set $B::Utils::file, $B::Utils::line, and
+        $B::Utils::sub to the appropriate values of file, line number, and
+        sub name in the program being examined.
 
-    walkoptree_filtered($op, \&filter, \&callback, [$data])
+    "walkoptree_filtered($op, \&filter, \&callback, [$data])"
         This is much the same as "walkoptree_simple", but will only call the
         callback if the "filter" returns true. The "filter" is passed the op
         in question as a parameter; the "opgrep" function is fantastic for
         building your own filters.
 
-    walkallops_simple(\&callback, [$data])
+    "walkallops_simple(\&callback, [$data])"
         This combines "walkoptree_simple" with "all_roots" and "anon_subs"
         to examine every op in the program. $B::Utils::sub is set to the
         subroutine name if you're in a subroutine, "__MAIN__" if you're in
         the main program and "__ANON__" if you're in an anonymous
         subroutine.
 
-    walkallops_filtered(\&filter, \&callback, [$data])
+    "walkallops_filtered(\&filter, \&callback, [$data])"
         Same as above, but filtered.
 
-    opgrep(\%conditions, @ops)
+    "opgrep(\%conditions, @ops)"
         Returns the ops which meet the given conditions. The conditions
         should be specified like this:
 
@@ -148,14 +140,53 @@ FUNCTIONS
                 name targ type seq flags private pmflags pmpermflags
                 first other last sibling next pmreplroot pmreplstart pmnext
 
-    opgrep( \@conditions, @ops )
+        If the value of one of the recursing keys (such as "sibling",
+        "next", "first", etc.) is an array reference containing multiple
+        structures, only one of them has to match. The array reference acts
+        as a disjunction, an *or* operation. Example:
+
+          my $sub_structure = {
+            name => 'helem',
+            first => { name => 'rv2hv', },
+            'last' => { name => 'const', },
+          };
+  
+          my @ops = opgrep( {
+              name => 'leavesub',
+              first => {
+                name => 'lineseq',
+                first => { name => 'nextstate', },
+                last => [
+                  {
+                    name => 'return',
+                    first => { name => 'pushmark' },
+                    last => $sub_structure,
+                  },
+                  $sub_structure,
+                ],
+              },
+          }, $op_obj );
+
+        This example matches the code in a typical simplest-possible
+        accessor method (albeit not down to the last bit):
+
+          sub get_foo { $_[0]->{foo} }
+
+        But by adding an alternation (the array reference in the structure),
+        we can also match optional op layers. In this case, we optionally
+        match a return statement, so the following implementation is also
+        recognized:
+
+          sub get_foo { return $_[0]->{foo} }
+
+    "opgrep( \@conditions, @ops )"
         Same as sbove, except that you don't have to chain the conditions
         yourself. If you pass an array-ref, opgrep will chain the conditions
         for you. The conditions can either be strings (taken as op-names),
         or hash-refs, with the same testable conditions as given above.
 
-    carp(@args)
-    croak(@args)
+    "carp(@args)"
+    "croak(@args)"
         Warn and die, respectively, from the perspective of the position of
         the op in the program. Sounds complicated, but it's exactly the kind
         of error reporting you expect when you're grovelling through an op
@@ -168,12 +199,11 @@ AUTHOR
     Originally written by Simon Cozens, "simon@cpan.org" Maintained by
     Joshua ben Jore, "jjore@cpan.org"
 
-    Contributions from Mattia Barbon and Jim Cromie.
+    Contributions from Mattia Barbon, Jim Cromie, and Steffen Mueller.
 
-TODO
-    I need to add more Fun Things, and possibly clean up some parts where
-    the (previous/parent) algorithm has catastrophic cases, but it's more
-    important to get this out right now than get it right.
+LICENSE
+    This module is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself.
 
 SEE ALSO
     B, B::Generate.
