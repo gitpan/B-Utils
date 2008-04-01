@@ -1,11 +1,16 @@
 Revision history for Perl extension B::Utils.
 
+0.05_04 Tue Apr  1 18:10:.. CEST 2008
+    - Fix bug in opgrep() alternations.
+    - Add the "kids" keyword to the opgrep syntax.
+    - Add the "dump" keyword to the opgrep syntax for debugging.
+    - Fixed the Change log (yes, this file) for the last
+      version since the comment on an opgrep() change was
+      incorrect.
+
 0.05_03 Sun Mar 30 11:13:.. CEST 2008
     - Fix various bugs in opgrep(). Did that work in 0.05_02 at all?
-    - opgrep() can now accept array references as the values
-      of recursing properties (such as first, last, next, or
-      sibling). The arrays are to hold sub structures / hash
-      references and only one of the needs to match.
+    - Introduce op_or() to match one of many possible conditions.
     - Add a longer example to opgrep() documentation.
     - Fix POD markup.
     - Add a clear license statement to the docs.

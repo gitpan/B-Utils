@@ -28,7 +28,7 @@ B::Utils - Helper functions for op tree manipulation
 
 =cut
 
-$VERSION = '0.05_03';
+$VERSION = '0.05_04';
 
 =head1 SYNOPSIS
 
@@ -661,10 +661,18 @@ You may also specify the conditions to be matched in nearby ops.
 
 Get that?
 
-Here are the things that can be tested:
+Here are the things that can be tested in this way:
 
         name targ type seq flags private pmflags pmpermflags
         first other last sibling next pmreplroot pmreplstart pmnext
+
+Additionally, you can use the C<kids> keyword with an array reference
+to match the result of a call to C<$op->kids()>. An example use is
+given in the documentation for C<op_or> below.
+
+For debugging, you can have many properties of an op that is currently being
+matched against a given condition dumped to STDERR
+by specifying C<dump => 1> in the condition's hash reference.
 
 =item C<opgrep( \@conditions, @ops )>
 
@@ -695,6 +703,15 @@ OP:
         # be several
 CONDITION:
         foreach my $condition (@conditions) {
+            # Debugging aid
+            if (exists $condition->{'dump'}) {
+              ($op->can($_)
+              or next)
+              and warn "$_: " . $op->$_ . "\n"
+              for
+              qw( first other last pmreplroot pmreplstart pmnext pmflags pmpermflags name targ type seq flags private kids);
+            }
+
             # First, let's skim off ops of the wrong type. If they require
             # something that isn't implemented for this kind of object, it
             # must be wrong. These tests are cheap
@@ -702,7 +719,7 @@ CONDITION:
                 and !$op->can($_)
                 and next
                 for
-                qw( first other last pmreplroot pmreplstart pmnext pmflags pmpermflags name targ type seq flags private  );
+                qw( first other last pmreplroot pmreplstart pmnext pmflags pmpermflags name targ type seq flags private kids);
 
             # Check alternations
             (   ref( $condition->{$_} )
@@ -713,18 +730,6 @@ CONDITION:
                 : ( $op->can($_) && $op->$_ eq $condition->{$_} or next )
                 )
                 for qw( name targ type seq flags private pmflags pmpermflags );
-
-#            foreach (qw( name targ type seq flags private pmflags pmpermflags )) {
-#              if ( ref $condition->{$_} ) { # alternation or inversion or both
-#                if ( "!" eq $condition->{$_}[0] ) { # inversion
-#                }
-#                else { # alternation only
-#                }
-#              }
-#              else {
-#                  ( $op->$_ eq $condition->{$_} or next )
-#              }
-#            }
 
             for my $test (
                 qw(name targ type seq flags private pmflags pmpermflags))
@@ -738,17 +743,20 @@ CONDITION:
                     if ( '!' eq $condition->{$test}[0] ) {
 
                         # Fail if any entries match.
-                        $_ eq $val
+                        $_ ne $val
                             or next CONDITION 
                             for @{ $condition->{$test} }
                             [ 1 .. $#{ $condition->{$test} } ];
                     }
                     else {
 
-                        # Fail if any entries don't match.
-                        $_ ne $val
-                            or next CONDITION 
+                        # Fail if no entries match.
+                        my $okay = 0;
+                        
+                        $_ eq $val and $okay = 1, last 
                             for @{ $condition->{$test} };
+
+                        next CONDITION if not $okay;
                     }
                 }
                 elsif ( 'CODE' eq ref $condition->{$test} ) {
@@ -772,6 +780,15 @@ CONDITION:
                 and next CONDITION
                 for
                 qw( first other last sibling next pmreplroot pmreplstart pmnext );
+  
+            # Apply all kids conditions. We $op->can(kids) (see above).
+            if (exists $condition->{kids}) {
+                my $kidno = 0;
+                my $kidconditions = $condition->{kids};
+                not( opgrep( $kidconditions->[$kidno++], $_ ) )
+                    and next CONDITION
+                    for $op->kids();
+            }
 
             # Attempt to quit early if possible.
             if (wantarray) {
@@ -823,15 +840,17 @@ Example:
       name => 'leavesub',
       first => {
         name => 'lineseq',
-        first => { name => 'nextstate', },
-        last => op_or(
-          {
-            name => 'return',
-            first => { name => 'pushmark' },
-            last => $sub_structure,
-          },
-          $sub_structure,
-        ),
+        kids => [,
+          { name => 'nextstate', },
+          op_or(
+            {
+              name => 'return',
+              first => { name => 'pushmark' },
+              last => $sub_structure,
+            },
+            $sub_structure,
+          ),
+        ],
       },
   }, $op_obj );
 
