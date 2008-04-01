@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                B-Utils
-version:             0.05_04
+version:             0.05_05
 abstract:            Helper functions for op tree manipulation
 license:             perl
 author:              

@@ -1,5 +1,8 @@
 Revision history for Perl extension B::Utils.
 
+0.05_05 Tue Apr  1 18:15:.. CEST 2008
+    - Fix POD error and update README.
+
 0.05_04 Tue Apr  1 18:10:.. CEST 2008
     - Fix bug in opgrep() alternations.
     - Add the "kids" keyword to the opgrep syntax.

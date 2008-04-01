@@ -2,21 +2,21 @@ NAME
     B::Utils - Helper functions for op tree manipulation
 
 VERSION
-    0.05_03 - This is a dev version and is part of an effort to add tests,
+    0.05_05 - This is a dev version and is part of an effort to add tests,
     functionality, and merge a fork from Module::Info.
 
 SYNOPSIS
       use B::Utils;
 
 OP METHODS
-    "$op-"oldname>
+    "$op->oldname"
         Returns the name of the op, even if it is currently optimized to
         null. This helps you understand the stucture of the op tree.
 
-    "$op-"kids>
+    "$op->kids"
         Returns an array of all this op's non-null children, in order.
 
-    "$op-"parent>
+    "$op->parent"
         Returns the parent node in the op tree, if possible. Currently
         "possible" means "if the tree has already been optimized"; that is,
         if we're during a "CHECK" block. (and hence, if we have valid "next"
@@ -26,22 +26,22 @@ OP METHODS
         have the "next" pointers in place, but it'll take me a while to
         figure out how to do that.
 
-    "$op-"ancestors>
+    "$op->ancestors"
         Returns all parents of this node, recursively. The list is ordered
         from younger/closer parents to older/farther parents.
 
-    "$op-"descendants>
+    "$op->descendants"
         Returns all children of this node, recursively. The list is
         unordered.
 
-    "$op-"siblings>
+    "$op->siblings"
         Returns all younger siblings of this node. The list is ordered from
         younger/closer siblings to older/farther siblings.
 
-    "$op-"previous>
-        Like " $op-"next >, but not quite.
+    "$op->previous"
+        Like " $op->next ", but not quite.
 
-    "$op-"stringify>
+    "$op->stringify"
         Returns a nice stringification of an opcode.
 
 EXPORTABLE FUNCTIONS
@@ -135,15 +135,33 @@ EXPORTABLE FUNCTIONS
 
         Get that?
 
-        Here are the things that can be tested:
+        Here are the things that can be tested in this way:
 
                 name targ type seq flags private pmflags pmpermflags
                 first other last sibling next pmreplroot pmreplstart pmnext
 
-        If the value of one of the recursing keys (such as "sibling",
-        "next", "first", etc.) is an array reference containing multiple
-        structures, only one of them has to match. The array reference acts
-        as a disjunction, an *or* operation. Example:
+        Additionally, you can use the "kids" keyword with an array reference
+        to match the result of a call to "$op->kids()". An example use is
+        given in the documentation for "op_or" below.
+
+        For debugging, you can have many properties of an op that is
+        currently being matched against a given condition dumped to STDERR
+        by specifying "dump =" 1> in the condition's hash reference.
+
+    "opgrep( \@conditions, @ops )"
+        Same as sbove, except that you don't have to chain the conditions
+        yourself. If you pass an array-ref, opgrep will chain the conditions
+        for you. The conditions can either be strings (taken as op-names),
+        or hash-refs, with the same testable conditions as given above.
+
+    "op_or( @conditions )"
+        Unlike the chaining of conditions done by "opgrep" itself if there
+        are multiple conditions, this function creates a disjunction
+        ("$cond1 || $cond2 || ...") of the conditions and returns a
+        structure (hash reference) that can be passed to opgrep as a single
+        condition.
+
+        Example:
 
           my $sub_structure = {
             name => 'helem',
@@ -155,14 +173,16 @@ EXPORTABLE FUNCTIONS
               name => 'leavesub',
               first => {
                 name => 'lineseq',
-                first => { name => 'nextstate', },
-                last => [
-                  {
-                    name => 'return',
-                    first => { name => 'pushmark' },
-                    last => $sub_structure,
-                  },
-                  $sub_structure,
+                kids => [,
+                  { name => 'nextstate', },
+                  op_or(
+                    {
+                      name => 'return',
+                      first => { name => 'pushmark' },
+                      last => $sub_structure,
+                    },
+                    $sub_structure,
+                  ),
                 ],
               },
           }, $op_obj );
@@ -172,18 +192,16 @@ EXPORTABLE FUNCTIONS
 
           sub get_foo { $_[0]->{foo} }
 
-        But by adding an alternation (the array reference in the structure),
-        we can also match optional op layers. In this case, we optionally
-        match a return statement, so the following implementation is also
-        recognized:
+        But by adding an alternation we can also match optional op layers.
+        In this case, we optionally match a return statement, so the
+        following implementation is also recognized:
 
           sub get_foo { return $_[0]->{foo} }
 
-    "opgrep( \@conditions, @ops )"
-        Same as sbove, except that you don't have to chain the conditions
-        yourself. If you pass an array-ref, opgrep will chain the conditions
-        for you. The conditions can either be strings (taken as op-names),
-        or hash-refs, with the same testable conditions as given above.
+        Essentially, this is syntactic sugar for the following structure
+        recognized by "opgrep()":
+
+          { disjunction => [@conditions] }
 
     "carp(@args)"
     "croak(@args)"

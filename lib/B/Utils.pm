@@ -21,14 +21,14 @@ B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.05_03 - This is a dev version and
+0.05_05 - This is a dev version and
   is part of an effort to add tests,
   functionality, and merge a fork
   from Module::Info.
 
 =cut
 
-$VERSION = '0.05_04';
+$VERSION = '0.05_05';
 
 =head1 SYNOPSIS
 
@@ -667,7 +667,7 @@ Here are the things that can be tested in this way:
         first other last sibling next pmreplroot pmreplstart pmnext
 
 Additionally, you can use the C<kids> keyword with an array reference
-to match the result of a call to C<$op->kids()>. An example use is
+to match the result of a call to C<$op-E<gt>kids()>. An example use is
 given in the documentation for C<op_or> below.
 
 For debugging, you can have many properties of an op that is currently being
