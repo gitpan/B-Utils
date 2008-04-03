@@ -1,5 +1,11 @@
 Revision history for Perl extension B::Utils.
 
+0.05_06 Tue Apr 3 18:15:.. CEST 2008
+    - Add the as_opgrep_pattern() method to B::OP for
+      dumping op trees as patterns for matching with opgrep.
+    - Add warnings.
+    - Documentation fixes.
+
 0.05_05 Tue Apr  1 18:15:.. CEST 2008
     - Fix POD error and update README.
 

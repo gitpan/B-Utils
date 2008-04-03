@@ -2,7 +2,6 @@ Changes
 lib/B/Utils.pm
 Makefile.PL
 MANIFEST			This list of files
-META.yml
 README
 SIGNATURE
 t/00signature.t
@@ -28,3 +27,4 @@ t/43allfilt.t
 t/44optrep.t
 t/50carp.t
 t/51croak.t
+META.yml                                 Module meta-data (added by MakeMaker)

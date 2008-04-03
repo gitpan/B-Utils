@@ -2,6 +2,7 @@ package B::Utils;
 
 use 5.006;
 use strict;
+use warnings;
 use vars qw( $VERSION @EXPORT_OK %EXPORT_TAGS
     @bad_stashes $TRACE_FH $file $line $sub );
 
@@ -21,14 +22,14 @@ B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.05_05 - This is a dev version and
+0.05_06 - This is a dev version and
   is part of an effort to add tests,
   functionality, and merge a fork
   from Module::Info.
 
 =cut
 
-$VERSION = '0.05_05';
+$VERSION = '0.05_06';
 
 =head1 SYNOPSIS
 
@@ -56,6 +57,7 @@ BEGIN {
 
     # Fake up a TRACE constant and set $TRACE_FH
     BEGIN { $^W = 0 }
+    no warnings;
     eval 'sub TRACE () {' . ( 0 + $ENV{B_UTILS_TRACE} ) . '}';
     die $@ if $@;
     $TRACE_FH ||= \*STDOUT;
@@ -315,6 +317,69 @@ sub B::OP::stringify {
     my $op = shift;
 
     return sprintf "%s-%s=(0x%07x)", $op->name, class($op), $$op;
+}
+
+=item C<$op-E<gt>as_opgrep_pattern(%options)>
+
+From the op tree it is called on, C<as_opgrep_pattern()>
+generates a data structure suitable for use as a condition pattern
+for the C<opgrep()> function described below in detail.
+I<Beware>: When using such generated patterns, there may be
+false positives: The pattern will most likely not match I<only>
+the op tree it was generated from since by default, not all properties
+of the op are reproduced.
+
+You can control which properties of the op to include in the pattern
+by passing named arguments. The default behaviour is as if you
+passed in the following options:
+
+  my $pattern = $op->as_opgrep_pattern(
+    attributes          => [qw(name flags)],
+    max_recursion_depth => undef,
+  );
+
+So obviously, you can set C<max_recursion_depth> to a number to
+limit the maximum depth of recursion into the op tree. Setting
+it to C<0> will limit the dump to the current op.
+
+C<attributes> is a list of attributes to include in the produced
+pattern. The attributes that can be checked against in this way
+are 
+
+  name targ type seq flags private pmflags pmpermflags.
+
+=cut
+
+sub B::OP::as_opgrep_pattern {
+  my $op = shift;
+  my $opt = (@_ == 1 and ref($_[0]) eq 'HASH') ? shift() : {@_};
+
+  my $attribs = $opt->{attributes};
+  $attribs ||= [qw(name flags)];
+  
+  my $pattern = {};
+  foreach my $attr (@$attribs) {
+    $pattern->{$attr} = $op->$attr() if $op->can($attr);
+  }
+
+  my $recursion_limit = $opt->{max_recursion_depth};
+  if ( (not defined $recursion_limit or $recursion_limit > 0)
+       and ref($op)
+       and $$op
+       and $op->flags & OPf_KIDS
+  ) {
+    $opt->{max_recursion_depth}-- if defined $recursion_limit;
+
+    $pattern->{kids} = [
+      map { $_->as_opgrep_pattern($opt) } $op->kids()
+    ];
+  }
+
+  # reset the option structure in case we got a hash ref passed in.
+  $opt->{max_recursion_depth} = $recursion_limit
+    if exists $opt->{max_recursion_depth};
+
+  return $pattern;
 }
 
 =back
@@ -636,6 +701,9 @@ be specified like this:
                         @ops
                        );
 
+where the first argument to C<opgrep()> is the condition to be matched against the
+op structure. We'll henceforth refer to it as an op-pattern.
+
 You can specify alternation by giving an arrayref of values:
 
     @svs = opgrep ( { name => ["padsv", "gvsv"] }, @ops)
@@ -644,7 +712,7 @@ And you can specify inversion by making the first element of the
 arrayref a "!". (Hint: if you want to say "anything", say "not
 nothing": C<["!"]>)
 
-You may also specify the conditions to be matched in nearby ops.
+You may also specify the conditions to be matched in nearby ops as nested patterns.
 
     walkallops_filtered(
         sub { opgrep( {name => "exec",
@@ -676,9 +744,10 @@ by specifying C<dump => 1> in the condition's hash reference.
 
 =item C<opgrep( \@conditions, @ops )>
 
-Same as sbove, except that you don't have to chain the conditions
+Same as above, except that you don't have to chain the conditions
 yourself.  If you pass an array-ref, opgrep will chain the conditions
-for you.  The conditions can either be strings (taken as op-names), or
+for you using C<next>. 
+The conditions can either be strings (taken as op-names), or
 hash-refs, with the same testable conditions as given above.
 
 =cut
@@ -721,15 +790,15 @@ CONDITION:
                 for
                 qw( first other last pmreplroot pmreplstart pmnext pmflags pmpermflags name targ type seq flags private kids);
 
-            # Check alternations
-            (   ref( $condition->{$_} )
-                ? ( "!" eq $condition->{$_}[0]
-                    ? ()
-                    : ()
-                    )
-                : ( $op->can($_) && $op->$_ eq $condition->{$_} or next )
-                )
-                for qw( name targ type seq flags private pmflags pmpermflags );
+#            # Check alternations
+#            (   ref( $condition->{$_} )
+#                ? ( "!" eq $condition->{$_}[0]
+#                    ? ()
+#                    : ()
+#                    )
+#                : ( $op->can($_) && $op->$_ eq $condition->{$_} or next )
+#                )
+#                for qw( name targ type seq flags private pmflags pmpermflags );
 
             for my $test (
                 qw(name targ type seq flags private pmflags pmpermflags))
