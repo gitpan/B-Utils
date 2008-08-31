@@ -29,7 +29,13 @@ B::Utils - Helper functions for op tree manipulation
 
 =cut
 
-$VERSION = '0.05_09';
+$VERSION = '0.05_10';
+
+use base 'DynaLoader';
+bootstrap B::Utils $VERSION;
+#bootstrap B::Utils::OP $VERSION;
+#B::Utils::OP::boot_B__Utils__OP();
+sub dl_load_flags {0x01}
 
 =head1 SYNOPSIS
 
@@ -1072,12 +1078,30 @@ sub _preparewarn {
 
 None by default.
 
+=head2 XS EXPORT
+
+This modules uses L<ExtUtils::Depends> to export some useful functions
+for XS modules to use.  To use those, include in your Makefile.PL:
+
+  my $pkg = ExtUtils::Depends->new("Your::XSModule", "B::Utils");
+  WriteMakefile(
+    ... # your normal makefile flags
+    $pkg->get_makefile_vars,
+  );
+
+Your XS module can now include F<BUtils.h> and F<BUtils_op.h>.  To see
+document for the functions provided, use:
+
+  perldoc -m B::Utils::Install::BUtils.h
+  perldoc -m B::Utils::Install::BUtils_op.h
+
 =head1 AUTHOR
 
 Originally written by Simon Cozens, C<simon@cpan.org>
 Maintained by Joshua ben Jore, C<jjore@cpan.org>
 
-Contributions from Mattia Barbon, Jim Cromie, and Steffen Mueller.
+Contributions from Mattia Barbon, Jim Cromie, Steffen Mueller, and
+Chia-liang Kao.
 
 =head1 LICENSE
 
