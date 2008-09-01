@@ -29,7 +29,7 @@ B::Utils - Helper functions for op tree manipulation
 
 =cut
 
-$VERSION = '0.05_10';
+$VERSION = '0.06';
 
 use base 'DynaLoader';
 bootstrap B::Utils $VERSION;

@@ -7,7 +7,7 @@ use warnings;
 use B::Utils ();
 
 use base 'Exporter';
-our $VERSION = '0.05_10';
+our $VERSION = '0.06';
 our @EXPORT = qw(parent_op return_op);
 
 use base 'DynaLoader';
@@ -21,11 +21,11 @@ if (my $boot_symbol_ref = DynaLoader::dl_find_symbol_anywhere($bootname)) {
 
 =head1 NAME
 
-B::Utils - op related utility functions for perl
+B::Utils::OP - op related utility functions for perl
 
 =head1 SYNOPSIS
 
-  use B::OP::Util qw(parent_op return_op);
+  use B::Utils::OP qw(parent_op return_op);
   sub foo {
     my $pop = parent_op(0);
     my $rop = return_op(0);
