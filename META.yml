@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               B-Utils
-version:            0.09
+version:            0.10
 abstract:           Helper functions for op tree manipulation
 author:
     - Joshua b. Jore <jjore@cpan.org>
@@ -24,7 +24,7 @@ no_index:
     directory:
         - t
         - inc
-generated_by:       ExtUtils::MakeMaker version 6.55_02
+generated_by:       ExtUtils::MakeMaker version 6.56
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4

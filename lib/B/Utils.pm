@@ -28,11 +28,24 @@ B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.09
+0.10
 
 =cut
 
-$VERSION = '0.09';
+$VERSION = '0.10';
+
+
+
+=head1 INSTALLATION
+
+To install this module, run the following commands:
+
+    perl Makefile.PL
+    make
+    make test
+    make install
+
+=cut
 
 
 
@@ -247,12 +260,17 @@ younger/closer siblings to older/farther siblings.
 =cut
 
 sub B::OP::siblings {
-    my @siblings = shift;
+    my @siblings = $_[0];
 
     my $sibling;
-    push @siblings, $sibling while $sibling = $siblings[-1]->can('sibling');
+    push @siblings, $siblings[-1]->sibling while $siblings[-1]->can('sibling');
     shift @siblings;
-    pop @siblings if 'NULL' eq class $siblings[-1];
+
+    # Remove any undefined or B::NULL objects
+    pop @siblings while
+        @siblings
+        && !( defined $siblings[-1]
+              && ${$siblings[-1]} );
 
     return @siblings;
 }
