@@ -1,7 +1,13 @@
 #!perl
 use 5.006;
 use strict;
-my $ExtUtils_Depends_required = 0.302; #minimum version that works on Win32+gcc
+
+my $ExtUtils_Depends_required;
+
+# [RT #53415]
+if ($^O eq 'Win32') { $ExtUtils_Depends_required = 0.302; }
+else { $ExtUtils_Depends_required = 0.301; }
+
 eval {
 	require ExtUtils::Depends;
 };
@@ -42,7 +48,7 @@ WriteMakefile1(
         'ExtUtils::CBuilder' => 0,
     },
     ABSTRACT_FROM => 'lib/B/Utils.pm',
-    AUTHOR        => 'Joshua b. Jore <jjore@cpan.org>',
+    AUTHOR        => 'Josh Jore <jjore@cpan.org>',
     LICENSE       => 'perl',
     MIN_PERL_VERSION => 5.006,
     META_MERGE => {
