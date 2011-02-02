@@ -11,8 +11,9 @@ use subs (
     qw( walkoptree_simple walkoptree_filtered ),
     qw( walkallops_simple walkallops_filtered ),
     qw( opgrep op_or ),
-    qw( croak carp )
 );
+sub croak (@);
+sub carp (@);
 
 use Scalar::Util qw( weaken blessed );
 
@@ -28,11 +29,11 @@ B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.12
+0.13
 
 =cut
 
-$VERSION = '0.12';
+$VERSION = '0.13';
 
 
 
