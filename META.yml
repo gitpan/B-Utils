@@ -3,7 +3,11 @@ abstract: 'Helper functions for op tree manipulation'
 author:
   - 'Josh Jore <jjore@cpan.org>'
 build_requires:
+  ExtUtils::CBuilder: 0
   Test::More: 0
+configure_requires:
+  ExtUtils::CBuilder: 0
+  ExtUtils::Depends: 0.301
 dynamic_config: 0
 generated_by: 'Dist::Zilla version 4.200000, CPAN::Meta::Converter version 2.102400'
 license: perl
@@ -12,17 +16,12 @@ meta-spec:
   version: 1.4
 name: B-Utils
 requires:
-  B: 0
-  Carp: 0
-  DynaLoader: 0
   Exporter: 0
-  List::Util: 0
   Scalar::Util: 0
-  perl: 5.006
-  subs: 0
-  vars: 0
+  Task::Weaken: 0
+  perl: 5.6.0
 resources:
   bugtracker: https://rt.cpan.org/Public/Dist/Display.html?Name=B-Utils
   homepage: http://search.cpan.org/dist/B-Utils
   repository: git://github.com/jbenjore/b-utils.git
-version: 0.14
+version: 0.15
