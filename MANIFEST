@@ -15,6 +15,7 @@ lib/B/Utils/OP.pm
 ppport.h
 t/10use.t
 t/11export.t
+t/regression_walkallops_filtered.t
 t/release-pod-syntax.t
 t/utils/20all_starts.t
 t/utils/21all_roots.t

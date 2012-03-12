@@ -29,11 +29,11 @@ B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.18
+0.19
 
 =cut
 
-$VERSION = '0.18';
+$VERSION = '0.19';
 
 
 
@@ -703,7 +703,7 @@ Same as above, but filtered.
 sub walkallops_filtered {
     $sub = undef;
 
-    &_walkallops_filterd;
+    &_walkallops_filtered;
 
     return _TRUE;
 }
