@@ -24,4 +24,4 @@ resources:
   bugtracker: https://rt.cpan.org/Public/Dist/Display.html?Name=B-Utils
   homepage: http://search.cpan.org/dist/B-Utils
   repository: git://github.com/jbenjore/b-utils.git
-version: 0.17
+version: 0.18
