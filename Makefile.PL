@@ -36,11 +36,9 @@ WriteMakefile1(
     },
     BUILD_REQUIRES => {
         'Test::More' => 0,
-        'ExtUtils::CBuilder' => 0,
     },
     CONFIGURE_REQUIRES => {
         'ExtUtils::Depends' => $ExtUtils_Depends_required,
-        'ExtUtils::CBuilder' => 0,
     },
     ABSTRACT_FROM => 'lib/B/Utils.pm',
     AUTHOR        => 'Josh Jore <jjore@cpan.org>',
@@ -53,11 +51,13 @@ WriteMakefile1(
       keywords => ['op tree','perl internals'],
     },
     test          => { TESTS => 't/*.t t/*/*.t' },
+    SIGN          => 1,
     $pkg->get_makefile_vars,
-    FUNCLIST => [
-      'boot_B__Utils', #necessary for work of B::Utils
-      qw/BUtils_cc_opclassname BUtils_make_sv_object BUtils_op_name_to_num/, #defined in BUtils.h
-    ],
+    (($^O eq 'hpux') ? () :
+     (FUNCLIST => [
+	'boot_B__Utils', #necessary for work of B::Utils
+	qw/BUtils_cc_opclassname BUtils_make_sv_object BUtils_op_name_to_num/, #defined in BUtils.h
+      ])),
 );
 
 sub WriteMakefile1 {
