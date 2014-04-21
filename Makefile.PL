@@ -51,7 +51,6 @@ WriteMakefile1(
       keywords => ['op tree','perl internals'],
     },
     test          => { TESTS => 't/*.t t/*/*.t' },
-    SIGN          => 1,
     $pkg->get_makefile_vars,
     (($^O eq 'hpux') ? () :
      (FUNCLIST => [
