@@ -29,11 +29,11 @@ B::Utils - Helper functions for op tree manipulation
 
 =head1 VERSION
 
-0.22
+0.24
 
 =cut
 
-$VERSION = '0.22';
+$VERSION = '0.24';
 
 
 
@@ -581,13 +581,13 @@ and sub name in the program being examined.
 
 =cut
 
-$file = '__none__';
-$line = 0;
-$sub  = undef;
+$B::Utils::file = '__none__';
+$B::Utils::line = 0;
+$B::Utils::sub  = undef;
 
 sub walkoptree_simple {
-    $file = '__none__';
-    $line = 0;
+    $B::Utils::file = '__none__';
+    $B::Utils::line = 0;
 
     _walkoptree_simple( {}, @_ );
 
@@ -600,8 +600,8 @@ sub _walkoptree_simple {
     return if $visited->{$$op}++;
 
     if ( ref $op and $op->isa("B::COP") ) {
-        $file = $op->file;
-        $line = $op->line;
+        $B::Utils::file = $op->file;
+        $B::Utils::line = $op->line;
     }
 
     $callback->( $op, $data );
@@ -635,8 +635,8 @@ for building your own filters.
 =cut
 
 sub walkoptree_filtered {
-    $file = '__none__';
-    $line = 0;
+    $B::Utils::file = '__none__';
+    $B::Utils::line = 0;
 
     _walkoptree_filtered( {}, @_ );;
 
@@ -647,8 +647,8 @@ sub _walkoptree_filtered {
     my ( $visited, $op, $filter, $callback, $data ) = @_;
 
     if ( $op->isa("B::COP") ) {
-        $file = $op->file;
-        $line = $op->line;
+        $B::Utils::file = $op->file;
+        $B::Utils::line = $op->line;
     }
 
     $callback->( $op, $data ) if $filter->($op);
@@ -681,7 +681,7 @@ the main program and C<__ANON__> if you're in an anonymous subroutine.
 =cut
 
 sub walkallops_simple {
-    $sub = undef;
+    $B::Utils::sub = undef;
 
     &_walkallops_simple;
 
@@ -693,9 +693,13 @@ sub _walkallops_simple {
 
     _init_sub_cache();
 
-    walkoptree_simple( $_, $callback, $data ) for values %roots;
+    for my $sub_name (sort keys %roots) {
+	$B::Utils::sub = $sub_name;
+	my $root = $roots{$sub_name};
+	walkoptree_simple( $root, $callback, $data );
+    }
 
-    $sub = "__ANON__";
+    $B::Utils::sub = "__ANON__";
     walkoptree_simple( $_->{root}, $callback, $data ) for @anon_subs;
 
     return _TRUE;
@@ -708,7 +712,7 @@ Same as above, but filtered.
 =cut
 
 sub walkallops_filtered {
-    $sub = undef;
+    $B::Utils::sub = undef;
 
     &_walkallops_filtered;
 
@@ -722,7 +726,7 @@ sub _walkallops_filtered {
 
     walkoptree_filtered( $_, $filter, $callback, $data ) for values %roots;
 
-    $sub = "__ANON__";
+    $B::Utils::sub = "__ANON__";
 
     walkoptree_filtered( $_->{root}, $filter, $callback, $data )
         for @anon_subs;
@@ -1101,7 +1105,7 @@ sub _preparewarn {
     my $args = join '', @_;
     $args = "Something's wrong " unless $args;
     if ( "\n" ne substr $args, -1, 1 ) {
-        $args .= " at $file line $line.\n";
+        $args .= " at $B::Utils::file line $B::Utils::line.\n";
     }
     return $args;
 }
